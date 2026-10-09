@@ -118,33 +118,35 @@
         const pendingTbody = document.querySelector("#pendingTable tbody");
         const pendingSection = document.getElementById("pendingSection");
 
-        // 1. مراقبة جدول الطلاب المعتمدين[cite: 2]
-        db.collection("allowed_students").orderBy("name").onSnapshot((snapshot) => {
+        // 1. مراقبة جدول الطلاب المعتمدين (بدون ترتيب معلق لتجنب أخطاء الفهارس)[cite: 2]
+        db.collection("allowed_students").onSnapshot((snapshot) => {
             let approvedCount = snapshot.size;
             approvedTbody.innerHTML = "";
-            allStudentsData = []; // إعادة تعيين القائمة
+            allStudentsData = []; 
             document.getElementById("approvedCount").innerText = `الطلاب المعتمدين: ${approvedCount}`;
 
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const email = doc.id;
-                allStudentsData.push({ name: data.name, email: email });
+                allStudentsData.push({ name: data.name || "بدون اسم", email: email });
 
                 approvedTbody.innerHTML += `
                     <tr>
-                        <td id="name-cell-${email.replace(/[@.]/g, '_')}">${data.name}</td>
+                        <td>${data.name || "بدون اسم"}</td>
                         <td>${email}</td>
                         <td>
-                            <button class="btn-edit" onclick="editStudentName('${email}', '${data.name}')">✏️ تعديل</button>
+                            <button class="btn-edit" onclick="editStudentName('${email}', '${data.name || ""}')">✏️ تعديل</button>
                             <button class="btn-reject" onclick="deleteAllowed('${email}')">🗑️ حذف</button>
                         </td>
                     </tr>`;
             });
             searchStudents();
+        }, (error) => {
+            console.error("خطأ في جلب الطلاب المعتمدين: ", error);
         });
 
         // 2. مراقبة جدول الطلبات المعلقة[cite: 2]
-        db.collection("pending_students").orderBy("name").onSnapshot((snapshot) => {
+        db.collection("pending_students").onSnapshot((snapshot) => {
             let pendingCount = snapshot.size;
             pendingTbody.innerHTML = "";
             document.getElementById("pendingCountBadge").innerText = `الطلبات المعلقة: ${pendingCount}`;
@@ -155,21 +157,23 @@
                 const email = doc.id;
                 pendingTbody.innerHTML += `
                     <tr>
-                        <td>${data.name}</td>
+                        <td>${data.name || "بدون اسم"}</td>
                         <td>${email}</td>
                         <td>
-                            <button class="btn-approve" onclick="approveStudent('${email}', '${data.name}')">✅ قبول</button>
+                            <button class="btn-approve" onclick="approveStudent('${email}', '${data.name || ""}')">✅ قبول</button>
                             <button class="btn-reject" onclick="deletePending('${email}')">❌ رفض</button>
                         </td>
                     </tr>`;
             });
+        }, (error) => {
+            console.error("خطأ في جلب الطلبات المعلقة: ", error);
         });
     }
 
     // دالة تعديل الاسم وحفظه في السحابة
     async function editStudentName(email, currentName) {
         const newName = prompt("أدخل الاسم الجديد للطالب:", currentName);
-        if (newName === null) return; // تم الإلغاء
+        if (newName === null) return; 
         const trimmedName = newName.trim();
         if (!trimmedName) {
             alert("لا يمكن أن يكون الاسم فارغاً!");
