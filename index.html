@@ -6,7 +6,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <style>
-        :root { --maroon: #1e3a8a; --gold: #0284c7; --bg: #f8fafc; --danger: #dc2626; --success: #10b981; }
+        :root { --maroon: #1e3a8a; --gold: #0284c7; --bg: #f8fafc; --danger: #dc2626; --success: #10b981; --warning: #d97706; }
         body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); padding: 20px; }
         .admin-card { background: white; max-width: 1000px; margin: auto; border-radius: 15px; padding: 30px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); border-top: 8px solid var(--maroon); }
         .header { text-align: center; border-bottom: 2px solid var(--gold); margin-bottom: 20px; padding-bottom: 10px; }
@@ -17,6 +17,7 @@
         .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; transition: 0.3s; }
         .btn-upload { background: var(--maroon); }
         .btn-delete-all { background: var(--danger); }
+        .btn-copy-all { background: var(--warning); }
         
         .pending-section { background: #fff8e1; border: 2px solid #ffc107; padding: 15px; border-radius: 10px; margin-bottom: 25px; display: none; }
         .pending-section h3 { color: #d32f2f; margin-top: 0; }
@@ -27,8 +28,9 @@
         
         .btn-approve { background: var(--success); border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
         .btn-reject { background: var(--danger); border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; }
+        .btn-edit { background: var(--warning); border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; margin-left: 5px; }
         
-        .stats-bar { display: flex; justify-content: space-between; background: #e9ecef; padding: 15px; border-radius: 8px; font-weight: bold; color: var(--maroon); font-size: 1.1rem; margin-bottom: 15px; }
+        .stats-bar { display: flex; justify-content: space-between; background: #e9ecef; padding: 15px; border-radius: 8px; font-weight: bold; color: var(--maroon); font-size: 1.1rem; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; align-items: center; }
         .search-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; flex-wrap: wrap; gap: 10px; }
         .search-container h3 { margin: 0; color: var(--maroon); }
         .search-box { padding: 10px 15px; width: 100%; max-width: 350px; border-radius: 8px; border: 1px solid #ccc; font-size: 1rem; outline: none; transition: 0.3s; }
@@ -40,7 +42,7 @@
 <div class="admin-card">
     <div class="header">
         <h2>لوحة التحكم الشاملة - د. سامي محمد العمر 🔒</h2>
-        <p>إدارة الطلاب المعتمدين ومراجعة طلبات التسجيل الجديدة (خاص بسحابة د. سامي)</p>
+        <p>إدارة الطلاب المعتمدين ومراجعة طلبات التسجيل الجديدة (خاص بسحابة د. سامي)[cite: 2]</p>
     </div>
 
     <!-- قسم الطلبات المعلقة -->
@@ -60,11 +62,12 @@
 
     <!-- قسم الرفع الجماعي -->
     <div class="bulk-section">
-        <label><strong>لصق القائمة هنا (سيتم اعتمادهم مباشرة للمعتمدين في سحابة د. سامي):</strong></label>
+        <label><strong>لصق القائمة هنا (سيتم اعتمادهم مباشرة للمعتمدين في سحابة د. سامي):</strong>[cite: 2]</label>
         <textarea id="bulkInput" placeholder="الصق هنا.. لا يهم إذا بدأ السطر بالاسم أو الإيميل"></textarea>
         <div class="controls">
             <button class="btn btn-upload" onclick="superSmartBulkAdd()">بدء المعالجة والرفع 🚀</button>
-            <button class="btn btn-delete-all" onclick="deleteAllStudents()">حذف الكل (المعتمدين) 🗑️</button>
+            <button class="btn btn-copy-all" onclick="copyAllStudents()">نسخ جميع الطلاب 📋</button>
+            <button class="btn btn-delete-all" onclick="deleteAllStudents()">حذف الكل (المعتمدين) 🗑️[cite: 2]</button>
         </div>
     </div>
 
@@ -93,7 +96,7 @@
 </div>
 
 <script>
-    // إعدادات سحابة الدكتور سامي الخاصة بمشروعه المستقل
+    // إعدادات سحابة الدكتور سامي الخاصة بمشروعه المستقل[cite: 2]
     const firebaseConfig = {
       apiKey: "AIzaSyAJKKo_NfmOMA095ulSRDnwQvfHLeIz_s",
       authDomain: "samy-28452.firebaseapp.com",
@@ -108,31 +111,39 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    let allStudentsData = []; // حفظ بيانات الطلاب لغرض النسخ
+
     function fetchStudents() {
         const approvedTbody = document.querySelector("#studentsTable tbody");
         const pendingTbody = document.querySelector("#pendingTable tbody");
         const pendingSection = document.getElementById("pendingSection");
 
-        // 1. مراقبة جدول الطلاب المعتمدين
+        // 1. مراقبة جدول الطلاب المعتمدين[cite: 2]
         db.collection("allowed_students").orderBy("name").onSnapshot((snapshot) => {
             let approvedCount = snapshot.size;
             approvedTbody.innerHTML = "";
+            allStudentsData = []; // إعادة تعيين القائمة
             document.getElementById("approvedCount").innerText = `الطلاب المعتمدين: ${approvedCount}`;
 
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const email = doc.id;
+                allStudentsData.push({ name: data.name, email: email });
+
                 approvedTbody.innerHTML += `
                     <tr>
-                        <td>${data.name}</td>
+                        <td id="name-cell-${email.replace(/[@.]/g, '_')}">${data.name}</td>
                         <td>${email}</td>
-                        <td><button class="btn-reject" onclick="deleteAllowed('${email}')">🗑️ حذف</button></td>
+                        <td>
+                            <button class="btn-edit" onclick="editStudentName('${email}', '${data.name}')">✏️ تعديل</button>
+                            <button class="btn-reject" onclick="deleteAllowed('${email}')">🗑️ حذف</button>
+                        </td>
                     </tr>`;
             });
             searchStudents();
         });
 
-        // 2. مراقبة جدول الطلبات المعلقة
+        // 2. مراقبة جدول الطلبات المعلقة[cite: 2]
         db.collection("pending_students").orderBy("name").onSnapshot((snapshot) => {
             let pendingCount = snapshot.size;
             pendingTbody.innerHTML = "";
@@ -152,6 +163,46 @@
                         </td>
                     </tr>`;
             });
+        });
+    }
+
+    // دالة تعديل الاسم وحفظه في السحابة
+    async function editStudentName(email, currentName) {
+        const newName = prompt("أدخل الاسم الجديد للطالب:", currentName);
+        if (newName === null) return; // تم الإلغاء
+        const trimmedName = newName.trim();
+        if (!trimmedName) {
+            alert("لا يمكن أن يكون الاسم فارغاً!");
+            return;
+        }
+
+        try {
+            await db.collection("allowed_students").doc(email).update({
+                name: trimmedName
+            });
+            alert("تم تحديث وحفظ الاسم في السحابة بنجاح!");
+        } catch (error) {
+            alert("حدث خطأ أثناء تحديث الاسم.");
+            console.error(error);
+        }
+    }
+
+    // دالة نسخ جميع الطلاب المعتمدين
+    function copyAllStudents() {
+        if (allStudentsData.length === 0) {
+            alert("لا يوجد طلاب لنسخهم!");
+            return;
+        }
+
+        let textToCopy = "";
+        allStudentsData.forEach(s => {
+            textToCopy += `${s.name}\t${s.email}\n`;
+        });
+
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            alert("تم نسخ قائمة الطلاب بالكامل بنجاح!");
+        }).catch(err => {
+            alert("حدث خطأ أثناء النسخ.");
         });
     }
 
@@ -212,7 +263,7 @@
 
         if(count > 0) {
             await batch.commit();
-            alert(`تم رفع واعتماد ${count} طالب مباشرة في سحابة د. سامي بنجاح!`);
+            alert(`تم رفع واعتماد ${count} طالب مباشرة في سحابة د. سامي بنجاح!`);[cite: 2]
             document.getElementById("bulkInput").value = "";
         } else {
             alert("تنسيق غير معروف. تأكد من وجود الاسم والإيميل في سطرين متتاليين.");
