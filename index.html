@@ -63,7 +63,7 @@
     <!-- قسم الرفع الجماعي -->
     <div class="bulk-section">
         <label><strong>لصق القائمة هنا (سيتم اعتمادهم مباشرة للمعتمدين في سحابة د. سامي):</strong></label>
-        <textarea id="bulkInput" placeholder="الصق هنا.. لا يهم إذا بدأ السطر بالاسم أو الإيميل"></textarea>
+        <textarea id="bulkInput" placeholder="الصق هنا.. سواء أسماء فقط أو أسماء وإيميلات"></textarea>
         <div class="controls">
             <button class="btn btn-upload" onclick="superSmartBulkAdd()">بدء المعالجة والرفع 🚀</button>
             <button class="btn btn-delete-all" onclick="deleteAllStudents()">حذف الكل (المعتمدين) 🗑️</button>
@@ -118,8 +118,8 @@
         const pendingTbody = document.querySelector("#pendingTable tbody");
         const pendingSection = document.getElementById("pendingSection");
 
-        // 1. مراقبة جدول الطلاب المعتمدين
-        db.collection("allowed_students").orderBy("name").onSnapshot((snapshot) => {
+        // 1. مراقبة جدول الطلاب المعتمدين (تم إلغاء الترتيب الإجباري لمنع حجب البيانات)
+        db.collection("allowed_students").onSnapshot((snapshot) => {
             let approvedCount = snapshot.size;
             approvedTbody.innerHTML = "";
             cachedStudents = [];
@@ -128,23 +128,26 @@
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const email = doc.id;
-                cachedStudents.push({ name: data.name, email: email });
+                const studentName = data.name || "اسم غير محدد";
+                cachedStudents.push({ name: studentName, email: email });
                 
                 approvedTbody.innerHTML += `
                     <tr>
-                        <td>${data.name}</td>
+                        <td>${studentName}</td>
                         <td>${email}</td>
                         <td>
-                            <button class="btn-edit" onclick="editStudentName('${email}', '${data.name}')">✏️ تعديل الاسم</button>
+                            <button class="btn-edit" onclick="editStudentName('${email}', '${studentName}')">✏️ تعديل الاسم</button>
                             <button class="btn-reject" onclick="deleteAllowed('${email}')">🗑️ حذف</button>
                         </td>
                     </tr>`;
             });
             searchStudents();
+        }, (error) => {
+            console.error("خطأ جلب الطلاب المعتمدين:", error);
         });
 
         // 2. مراقبة جدول الطلبات المعلقة
-        db.collection("pending_students").orderBy("name").onSnapshot((snapshot) => {
+        db.collection("pending_students").onSnapshot((snapshot) => {
             let pendingCount = snapshot.size;
             pendingTbody.innerHTML = "";
             document.getElementById("pendingCountBadge").innerText = `الطلبات المعلقة: ${pendingCount}`;
@@ -153,16 +156,19 @@
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const email = doc.id;
+                const studentName = data.name || "اسم غير محدد";
                 pendingTbody.innerHTML += `
                     <tr>
-                        <td>${data.name}</td>
+                        <td>${studentName}</td>
                         <td>${email}</td>
                         <td>
-                            <button class="btn-approve" onclick="approveStudent('${email}', '${data.name}')">✅ قبول</button>
+                            <button class="btn-approve" onclick="approveStudent('${email}', '${studentName}')">✅ قبول</button>
                             <button class="btn-reject" onclick="deletePending('${email}')">❌ رفض</button>
                         </td>
                     </tr>`;
             });
+        }, (error) => {
+            console.error("خطأ جلب الطلبات المعلقة:", error);
         });
     }
 
@@ -186,7 +192,6 @@
             alert("لا توجد بيانات للنسخ.");
             return;
         }
-        // ترتيب كل طالب بحيث يكون اسمه في سطر وإيميله في السطر التالي
         let lines = [];
         cachedStudents.forEach(st => {
             lines.push(st.name);
@@ -225,52 +230,94 @@
         }
     }
 
+    // دالة المعالجة والرفع الشاملة والذكية
     async function superSmartBulkAdd() {
         const input = document.getElementById("bulkInput").value.trim();
         if(!input) return alert("يرجى لصق البيانات");
 
         const lines = input.split('\n').map(l => l.trim()).filter(l => l !== "");
-        const batch = db.batch();
         let count = 0;
+        let batch = db.batch();
+        let batchCount = 0;
 
         for(let i = 0; i < lines.length; i++) {
             let line1 = lines[i];
             let line2 = lines[i+1];
 
-            if(!line2) break;
-
             let name = "", email = "";
 
-            if(!line1.includes('@') && line2.includes('@')) {
+            // 1. اسم ثم إيميل في سطرين متتاليين
+            if(line2 && !line1.includes('@') && line2.includes('@')) {
                 name = line1; email = line2.toLowerCase();
                 i++;
-            } else if(line1.includes('@') && !line2.includes('@')) {
+            } 
+            // 2. إيميل ثم اسم في سطرين متتاليين
+            else if(line2 && line1.includes('@') && !line2.includes('@')) {
                 email = line1.toLowerCase(); name = line2;
                 i++;
+            } 
+            // 3. اسم وإيميل في نفس السطر
+            else if(line1.includes('@')) {
+                const parts = line1.split(/[\s,;\t]+/);
+                email = parts.find(p => p.includes('@'))?.toLowerCase() || "";
+                name = parts.filter(p => !p.includes('@')).join(' ');
+            } 
+            // 4. اسم فقط بدون إيميل -> توليد إيميل افتراضي له
+            else {
+                name = line1;
+                const randomId = Math.floor(1000 + Math.random() * 9000);
+                email = `student_${Date.now()}_${randomId}@std.local`;
             }
 
             if(name && email) {
                 const ref = db.collection("allowed_students").doc(email);
-                batch.set(ref, { name: name, added_at: firebase.firestore.FieldValue.serverTimestamp() });
+                batch.set(ref, { 
+                    name: name, 
+                    added_at: firebase.firestore.FieldValue.serverTimestamp() 
+                });
                 count++;
+                batchCount++;
+
+                // الحفظ الدفعي عند الوصول لأقصى حد مسموح به في Firebase (450 عملية)
+                if(batchCount >= 450) {
+                    await batch.commit();
+                    batch = db.batch();
+                    batchCount = 0;
+                }
             }
         }
 
-        if(count > 0) {
+        if(batchCount > 0) {
             await batch.commit();
-            alert(`تم رفع واعتماد ${count} طالب مباشرة في سحابة د. سامي بنجاح!`);
+        }
+
+        if(count > 0) {
+            alert(`تم رفع واعتماد ${count} طالب/اسم مباشرة في سحابة د. سامي بنجاح! ✨`);
             document.getElementById("bulkInput").value = "";
         } else {
-            alert("تنسيق غير معروف. تأكد من وجود الاسم والإيميل في سطرين متتاليين.");
+            alert("لم يتم العثور على بيانات صالحة للإضافة.");
         }
     }
 
     async function deleteAllStudents() {
         if(!confirm("تحذير: هل أنت متأكد من مسح جميع الطلاب المعتمدين لدكتور سامي؟")) return;
         const snapshot = await db.collection("allowed_students").get();
-        const batch = db.batch();
-        snapshot.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
+        let batch = db.batch();
+        let batchCount = 0;
+        
+        snapshot.forEach(doc => {
+            batch.delete(doc.ref);
+            batchCount++;
+            if(batchCount >= 450) {
+                batch.commit();
+                batch = db.batch();
+                batchCount = 0;
+            }
+        });
+        
+        if(batchCount > 0) {
+            await batch.commit();
+        }
         alert("تمت تصفية قائمة المعتمدين بالكامل.");
     }
 
