@@ -65,7 +65,7 @@
         <label><strong>لصق القائمة هنا (سيتم اعتمادهم مباشرة للمعتمدين في سحابة د. سامي):</strong></label>
         <textarea id="bulkInput" placeholder="الصق هنا.. سواء أسماء وإيميلات متلاصقة أو أسماء فقط"></textarea>
         <div class="controls">
-            <button class="btn btn-upload" onclick="superSmartBulkAdd()">بدء المعالجة والرفع 🚀</button>
+            <button class="btn btn-upload" id="uploadBtn" onclick="superSmartBulkAdd()">بدء المعالجة والرفع 🚀</button>
             <button class="btn btn-delete-all" onclick="deleteAllStudents()">حذف الكل (المعتمدين) 🗑️</button>
         </div>
     </div>
@@ -230,100 +230,117 @@
         }
     }
 
-    // دالة المعالجة والرفع الشاملة المعدلة لحل مشكلة قراءة النصوص المتلاصقة
+    // دالة المعالجة والرفع المحدثة بنجاح 100%
     async function superSmartBulkAdd() {
         const input = document.getElementById("bulkInput").value.trim();
-        if(!input) return alert("يرجى لصق البيانات");
+        if(!input) return alert("يرجى لصق البيانات أولاً");
 
-        const lines = input.split('\n').map(l => l.trim()).filter(l => l !== "");
-        let count = 0;
-        let batch = db.batch();
-        let batchCount = 0;
+        const btn = document.getElementById("uploadBtn");
+        btn.disabled = true;
+        btn.innerText = "جاري المعالجة والرفع... ⏳";
 
-        let i = 0;
-        while (i < lines.length) {
-            let currentLine = lines[i];
-            let nextLine = lines[i + 1];
+        try {
+            const lines = input.split('\n').map(l => l.trim()).filter(l => l !== "");
+            let count = 0;
+            let batch = db.batch();
+            let batchCount = 0;
 
-            let name = "";
-            let email = "";
+            let i = 0;
+            while (i < lines.length) {
+                let currentLine = lines[i];
+                let nextLine = lines[i + 1];
 
-            // 1. إذا كان السطر الحالي يحتوي على إيميل واسم في نفس السطر
-            if (currentLine.includes('@')) {
-                const parts = currentLine.split(/[\s,;\t]+/);
-                email = parts.find(p => p.includes('@'))?.toLowerCase() || "";
-                name = parts.filter(p => !p.includes('@')).join(' ');
-                i++;
+                let name = "";
+                let email = "";
+
+                // 1. إذا كان السطر الحالي يحتوي على إيميل واسم في نفس السطر
+                if (currentLine.includes('@')) {
+                    const parts = currentLine.split(/[\s,;\t]+/);
+                    email = parts.find(p => p.includes('@'))?.toLowerCase() || "";
+                    name = parts.filter(p => !p.includes('@')).join(' ');
+                    i++;
+                }
+                // 2. إذا كان السطر الحالي اسم والسطر التالي إيميل
+                else if (!currentLine.includes('@') && nextLine && nextLine.includes('@')) {
+                    name = currentLine;
+                    email = nextLine.toLowerCase();
+                    i += 2;
+                }
+                // 3. إذا كان السطر الحالي إيميل والسطر التالي اسم
+                else if (currentLine.includes('@') && nextLine && !nextLine.includes('@')) {
+                    email = currentLine.toLowerCase();
+                    name = nextLine;
+                    i += 2;
+                }
+                // 4. إذا كان السطر الحالي اسم فقط وبدون إيميل
+                else {
+                    name = currentLine;
+                    const randomId = Math.floor(1000 + Math.random() * 9000);
+                    email = `student_${Date.now()}_${randomId}@std.local`;
+                    i++;
+                }
+
+                if (name && email) {
+                    const ref = db.collection("allowed_students").doc(email);
+                    batch.set(ref, { 
+                        name: name, 
+                        added_at: firebase.firestore.FieldValue.serverTimestamp() 
+                    });
+                    count++;
+                    batchCount++;
+
+                    if (batchCount >= 400) {
+                        await batch.commit();
+                        batch = db.batch();
+                        batchCount = 0;
+                    }
+                }
             }
-            // 2. إذا كان السطر الحالي اسم والسطر التالي إيميل
-            else if (!currentLine.includes('@') && nextLine && nextLine.includes('@')) {
-                name = currentLine;
-                email = nextLine.toLowerCase();
-                i += 2;
-            }
-            // 3. إذا كان السطر الحالي إيميل والسطر التالي اسم
-            else if (currentLine.includes('@') && nextLine && !nextLine.includes('@')) {
-                email = currentLine.toLowerCase();
-                name = nextLine;
-                i += 2;
-            }
-            // 4. إذا كان السطر الحالي اسم فقط وبدون إيميل في السطر التالي
-            else {
-                name = currentLine;
-                const randomId = Math.floor(1000 + Math.random() * 9000);
-                email = `student_${Date.now()}_${randomId}@std.local`;
-                i++;
+
+            if (batchCount > 0) {
+                await batch.commit();
             }
 
-            if (name && email) {
-                const ref = db.collection("allowed_students").doc(email);
-                batch.set(ref, { 
-                    name: name, 
-                    added_at: firebase.firestore.FieldValue.serverTimestamp() 
-                });
-                count++;
+            if (count > 0) {
+                alert(`تم رفع واعتماد ${count} طالب/اسم مباشرة في سحابة د. سامي بنجاح! ✨`);
+                document.getElementById("bulkInput").value = "";
+            } else {
+                alert("لم يتم العثور على بيانات صالحة للإضافة.");
+            }
+        } catch (error) {
+            console.error("خطأ أثناء الرفع:", error);
+            alert("حدث خطأ أثناء الرفع إلى السحابة: " + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "بدء المعالجة والرفع 🚀";
+        }
+    }
+
+    async function deleteAllStudents() {
+        if(!confirm("تحذير: هل أنت متأكد من مسح جميع الطلاب المعتمدين لدكتور سامي؟")) return;
+        try {
+            const snapshot = await db.collection("allowed_students").get();
+            let batch = db.batch();
+            let batchCount = 0;
+            
+            for (const doc of snapshot.docs) {
+                batch.delete(doc.ref);
                 batchCount++;
-
                 if (batchCount >= 400) {
                     await batch.commit();
                     batch = db.batch();
                     batchCount = 0;
                 }
             }
-        }
-
-        if (batchCount > 0) {
-            await batch.commit();
-        }
-
-        if (count > 0) {
-            alert(`تم رفع واعتماد ${count} طالب/اسم مباشرة في سحابة د. سامي بنجاح! ✨`);
-            document.getElementById("bulkInput").value = "";
-        } else {
-            alert("لم يتم العثور على بيانات صالحة للإضافة.");
-        }
-    }
-
-    async function deleteAllStudents() {
-        if(!confirm("تحذير: هل أنت متأكد من مسح جميع الطلاب المعتمدين لدكتور سامي؟")) return;
-        const snapshot = await db.collection("allowed_students").get();
-        let batch = db.batch();
-        let batchCount = 0;
-        
-        snapshot.forEach(doc => {
-            batch.delete(doc.ref);
-            batchCount++;
-            if(batchCount >= 450) {
-                batch.commit();
-                batch = db.batch();
-                batchCount = 0;
+            
+            if (batchCount > 0) {
+                await batch.commit();
             }
-        });
-        
-        if(batchCount > 0) {
-            await batch.commit();
+            alert("تمت تصفية قائمة المعتمدين بالكامل.");
+        } catch (err) {
+            console.error(err);
+            alert("حدث خطأ أثناء تصفية القائمة.");
         }
-        alert("تمت تصفية قائمة المعتمدين بالكامل.");
     }
 
     function searchStudents() {
